@@ -1,0 +1,5 @@
+# Never serve server-side config or PHP error logs over HTTP
+<FilesMatch "^(config\.local\.php|config\.local\.example\.php|error_log)$">
+    Require all denied
+</FilesMatch>
+Options -Indexes

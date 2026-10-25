@@ -1,0 +1,75 @@
+name: Deploy to cPanel (FTP)
+
+# Every push to main that touches the app deploys the contents of ./iot/
+# to the cPanel host over FTP/FTPS. Can also be run by hand from the Actions tab.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   FTP_SERVER    FTP host, e.g. ftp.example.com (or the server IP)
+#   FTP_USERNAME  cPanel FTP account
+#   FTP_PASSWORD  its password
+#
+# Optional repository variables (same page, "Variables" tab):
+#   FTP_TARGET_DIR  remote folder, default /public_html/iot/  (keep the trailing slash)
+#   FTP_PROTOCOL    ftps (default) | ftp | ftps-legacy
+#   FTP_PORT        default 21
+#
+# The database is NOT touched by this workflow: import sql/hivaindb_alldata.sql once
+# via phpMyAdmin, and create iot/config.local.php on the server by hand (see
+# iot/config.local.example.php). That file is never uploaded or overwritten by this job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "iot/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: cpanel-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Upload to cPanel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Check required secrets are set
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          missing=0
+          for v in FTP_SERVER FTP_USERNAME FTP_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::Secret $v is not set"; missing=1; fi
+          done
+          exit $missing
+
+      - name: PHP syntax check
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq php-cli > /dev/null
+          find iot -name '*.php' -not -path 'iot/chart/asset/*' -print0 | xargs -0 -n1 php -l > /dev/null
+
+      - name: Deploy ./iot/ via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          port: ${{ vars.FTP_PORT || 21 }}
+          local-dir: ./iot/
+          server-dir: ${{ vars.FTP_TARGET_DIR || '/public_html/iot/' }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/error_log
+            **/config.local.php
+            **/*.map
