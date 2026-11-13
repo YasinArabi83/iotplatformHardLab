@@ -1,2 +1,5 @@
+.gitignore
 iot/config.local.php
+iot/tempmon/config.local.php
+iot/tempmon/alarm.lock
 error_log

@@ -29,6 +29,7 @@
 │   ├── monitoring/                # صفحه‌ی مانیتورینگ زنده
 │   ├── asset/                     # CSS
 │   ├── insert.php, loglastjson.php, arrayjson.php, createID.php, active.php   # API
+│   ├── tempmon/                     # مانیتور دما: cron هر ۵ دقیقه + هشدار بله (راهنما: README داخلی)
 │   ├── controlPanel.php, logusertable.php, logidtable.php, multi-link.php     # صفحات وب
 │   ├── config.local.example.php   # نمونه‌ی تنظیمات دیتابیس (روی سرور کپی می‌شود)
 │   └── .htaccess                  # دسترسی به فایل‌های حساس را می‌بندد
@@ -191,6 +192,12 @@ https://yourdomain.com/iot/insert.php?id=ID&tkn=TOKEN&ina=25&sena=on
 - محدودیت روزانه‌ی ثبت داده: کد `insert.php` ردیف‌های همان روز را با سقف ۱۰۰۰ مقایسه می‌کند، ولی پیام خطا «۵۰۰ داده در روز» می‌گوید.
 - نسخه‌ی PHP: کد روی 7.4 اجرا می‌شده است. روی 8.1 به بالا تست نشده و ممکن است هشدار یا خطای جدید بدهد.
 - پروتکل‌هایی مثل MQTT یا اتصال دائمی (socket) روی هاست اشتراکی cPanel معمولاً کار نمی‌کنند؛ این پروژه فقط با HTTP کار می‌کند.
+
+## مانیتور دما (tempmon)
+
+قابلیت جدید: یک cron هر ۵ دقیقه به `data.php` دستگاه درخواست می‌زند، دمای کانال‌های a/b/c را (÷100) می‌خواند، در جدول‌های `temp_log`/`temp_state` ذخیره می‌کند و برای «دمای بالا / قطع سنسور (مقدار -99...) / قطع دستگاه» پیام به بله می‌فرستد (هشدارها لبه‌ای هستند، اسپم ندارند).
+
+راه‌اندازی کامل (Cron Job در cPanel، ساخت ربات بله، آستانه‌ها) در [`iot/tempmon/README.md`](iot/tempmon/README.md) آمده است.
 
 ## عیب‌یابی
 
