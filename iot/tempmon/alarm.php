@@ -10,8 +10,9 @@
  *        - قطع سنسور:        مقدار برگشتی با "-99" شروع شود
  *        - دمای بالا:        مقدار از آستانه‌ی تعریف‌شده در config بیشتر شود
  *   4. رفتار پیام‌ها:
- *        - دما: در هر برداشت که دما بالای آستانه است، پیام هشدار ارسال می‌شود
- *          و در برگشت زیر آستانه یک پیام «حالت عادی» می‌رود.
+ *        - همه‌ی هشدارهای یک دوره (یک اجرای cron) در قالب **یک پیام** تجمیع
+ *          و ارسال می‌شوند؛ همین‌طور پیام‌های «برگشت به حالت عادی».
+ *        - هشدار دما در هر برداشت که دما بالای آستانه است داخل همان پیام دوره می‌آید.
  *        - قطع سنسور/دستگاه: لبه‌ای (یک پیام در شروع خطا و یک پیام در رفع آن).
  *
  * اجرا:
@@ -285,8 +286,11 @@ foreach ($devices as $dev) {
     }
 
     // 4) خواندن کانال‌های دما (a, b, c)
+    //    هشدارها/برگشت‌های همه‌ی کانال‌ها جمع می‌شوند و در «یک پیام» ارسال می‌گردند.
     $temps = ['a' => null, 'b' => null, 'c' => null];
     $statusFlags = [];
+    $alertLines    = []; // خط‌های هشدار این دوره
+    $recoveryLines = []; // خط‌های برگشت به حالت عادی این دوره
 
     foreach ($channels as $ch) {
         $key = 'input' . strtoupper($ch);
@@ -299,12 +303,7 @@ foreach ($devices as $dev) {
             if (empty($state[$flag])) {
                 $state[$flag] = 1;
                 $shown = ($rawVal === null) ? 'داده دریافت نشد' : (string)$rawVal;
-                tempmon_bale_send($baleConfig,
-                    "⚠️ قطعی سنسور\n" .
-                    "دستگاه: {$devName} (id={$deviceId})\n" .
-                    "کانال: " . strtoupper($ch) . "\n" .
-                    "مقدار: {$shown}\n" .
-                    'زمان: ' . date('Y-m-d H:i:s'), $log);
+                $alertLines[] = "• کانال " . strtoupper($ch) . " — قطعی سنسور (مقدار: {$shown})";
             }
             continue;
         }
@@ -313,11 +312,7 @@ foreach ($devices as $dev) {
         $flag = 'sensor_alert_' . $ch;
         if (!empty($state[$flag])) {
             $state[$flag] = 0;
-            tempmon_bale_send($baleConfig,
-                "✅ وصل شدن سنسور\n" .
-                "دستگاه: {$devName} (id={$deviceId})\n" .
-                "کانال: " . strtoupper($ch) . "\n" .
-                'زمان: ' . date('Y-m-d H:i:s'), $log);
+            $recoveryLines[] = "• کانال " . strtoupper($ch) . " — سنسور وصل شد";
         }
 
         // تبدیل به سانتی‌گراد و بررسی آستانه
@@ -328,29 +323,35 @@ foreach ($devices as $dev) {
         if ($limit !== null) {
             $tflag = 'temp_alert_' . $ch;
             if ($tempC > $limit) {
-                // دما بالای آستانه است → در هر برداشت پیام برو
+                // دما بالای آستانه است → خط هشدارِ این دوره (پیامِ تجمیعی)
                 $state[$tflag] = 1;
-                tempmon_bale_send($baleConfig,
-                    "🚨 هشدار دمای بالا\n" .
-                    "دستگاه: {$devName} (id={$deviceId})\n" .
-                    "کانال: " . strtoupper($ch) . "\n" .
-                    "دمای فعلی: " . number_format($tempC, 2, '.', '') . " °C\n" .
-                    "آستانه: " . number_format($limit, 2, '.', '') . " °C\n" .
-                    'زمان: ' . date('Y-m-d H:i:s'), $log);
+                $alertLines[] = "• کانال " . strtoupper($ch) . " — دمای بالا: " .
+                    number_format($tempC, 2, '.', '') . " °C (آستانه: " .
+                    number_format($limit, 2, '.', '') . ")";
             } elseif (!empty($state[$tflag])) {
-                // دما برگشت زیر آستانه → یک پیام «حالت عادی»
+                // دما برگشت زیر آستانه → خط «برگشت» در پیام تجمیعی
                 $state[$tflag] = 0;
-                tempmon_bale_send($baleConfig,
-                    "✅ برگشت دما به حالت عادی\n" .
-                    "دستگاه: {$devName} (id={$deviceId})\n" .
-                    "کانال: " . strtoupper($ch) . "\n" .
-                    "دمای فعلی: " . number_format($tempC, 2, '.', '') . " °C\n" .
-                    'زمان: ' . date('Y-m-d H:i:s'), $log);
+                $recoveryLines[] = "• کانال " . strtoupper($ch) . " — دما برگشت: " .
+                    number_format($tempC, 2, '.', '') . " °C";
             }
         }
     }
 
-    // 5) ذخیره در دیتابیس
+    // 5) ارسال پیام‌های تجمیعی این دوره (اگر چیزی داشته باشند)
+    if ($alertLines) {
+        tempmon_bale_send($baleConfig,
+            "🚨 هشدار دستگاه {$devName} (id={$deviceId})\n" .
+            "زمان: " . date('Y-m-d H:i:s') . "\n" .
+            implode("\n", $alertLines), $log);
+    }
+    if ($recoveryLines) {
+        tempmon_bale_send($baleConfig,
+            "✅ برگشت به حالت عادی — دستگاه {$devName} (id={$deviceId})\n" .
+            "زمان: " . date('Y-m-d H:i:s') . "\n" .
+            implode("\n", $recoveryLines), $log);
+    }
+
+    // 6) ذخیره در دیتابیس
     $status = $statusFlags ? implode(',', $statusFlags) : 'ok';
     tempmon_insert_log(
         $db->conn,
