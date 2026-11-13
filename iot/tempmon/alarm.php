@@ -9,8 +9,10 @@
  *        - قطع دستگاه:       تا بعد از offline_after_minutes هیچ پاسخ موفقی نرسد
  *        - قطع سنسور:        مقدار برگشتی با "-99" شروع شود
  *        - دمای بالا:        مقدار از آستانه‌ی تعریف‌شده در config بیشتر شود
- *   4. هشدارها لبه‌ای (edge-triggered) هستند: یک بار در شروع خطا و یک بار در
- *      پایان آن («برگشت به حالت عادی») پیام می‌رود؛ اسپم تکراری ندارد.
+ *   4. رفتار پیام‌ها:
+ *        - دما: در هر برداشت که دما بالای آستانه است، پیام هشدار ارسال می‌شود
+ *          و در برگشت زیر آستانه یک پیام «حالت عادی» می‌رود.
+ *        - قطع سنسور/دستگاه: لبه‌ای (یک پیام در شروع خطا و یک پیام در رفع آن).
  *
  * اجرا:
  *   CLI  : php /path/to/iot/tempmon/alarm.php
@@ -325,7 +327,8 @@ foreach ($devices as $dev) {
         $limit = isset($thresholds[$ch]) ? (float)$thresholds[$ch] : null;
         if ($limit !== null) {
             $tflag = 'temp_alert_' . $ch;
-            if ($tempC > $limit && empty($state[$tflag])) {
+            if ($tempC > $limit) {
+                // دما بالای آستانه است → در هر برداشت پیام برو
                 $state[$tflag] = 1;
                 tempmon_bale_send($baleConfig,
                     "🚨 هشدار دمای بالا\n" .
@@ -334,7 +337,8 @@ foreach ($devices as $dev) {
                     "دمای فعلی: " . number_format($tempC, 2, '.', '') . " °C\n" .
                     "آستانه: " . number_format($limit, 2, '.', '') . " °C\n" .
                     'زمان: ' . date('Y-m-d H:i:s'), $log);
-            } elseif ($tempC <= $limit && !empty($state[$tflag])) {
+            } elseif (!empty($state[$tflag])) {
+                // دما برگشت زیر آستانه → یک پیام «حالت عادی»
                 $state[$tflag] = 0;
                 tempmon_bale_send($baleConfig,
                     "✅ برگشت دما به حالت عادی\n" .
